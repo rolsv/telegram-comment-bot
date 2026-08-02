@@ -1,0 +1,32 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+
+.env
+.env.local
+.env.*.local
+
+sessions/
+*.session
+*.session-journal
+
+*.log
+logs/
+
+.vscode/
+.idea/
+*.swp
+*.swo
+
+.DS_Store
+Thumbs.db
+
+# Папка с гифками (сами файлы можно хранить отдельно)
+# gifs/*.gif
+# !gifs/.gitkeep
