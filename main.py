@@ -7,7 +7,7 @@ from telethon import TelegramClient, events
 from telethon.tl.functions.messages import GetDiscussionMessageRequest
 
 from config import (
-    CHANNEL, ACCOUNTS, MIN_POST_LENGTH,
+    CHANNELS, ACCOUNTS, MIN_POST_LENGTH,
     POST_DELAY, BETWEEN_COMMENTS_DELAY,
     COMMENT_PROBABILITY, DIALOG_PROBABILITY,
     DIALOG_MESSAGES_RANGE, DIALOG_DELAY_RANGE,
@@ -17,7 +17,7 @@ from ai_utils import generate_comment
 from tg_utils import (
     init_clients, run_client_safe, shutdown_clients,
     get_discussion_entities_for_all, send_comment_or_gif,
-    send_reply_message
+    send_reply_message, send_log_to_tg
 )
 
 logging.basicConfig(
@@ -27,10 +27,12 @@ logging.basicConfig(
 
 processed_posts: Set[int] = set()
 clients: List[TelegramClient] = []
+watcher_clients: List[TelegramClient] = []
+commenter_clients: List[TelegramClient] = []
 
 
 def choose_root_comment_clients() -> List[TelegramClient]:
-    available = clients[:]
+    available = commenter_clients[:]
     random.shuffle(available)
 
     if ROOT_COMMENTS_RANGE:
@@ -54,7 +56,7 @@ async def run_dialogue_chain(
     if len(sent_messages) < 1 or random.random() >= DIALOG_PROBABILITY:
         return
 
-    available_clients = [c for c in clients if c in discussion_entities]
+    available_clients = [c for c in commenter_clients if c in discussion_entities]
     if len(available_clients) < 2:
         return
 
@@ -93,76 +95,106 @@ async def run_dialogue_chain(
     logging.info("Диалог завершён")
 
 
-@events.register(events.NewMessage(chats=CHANNEL))
-async def new_post_handler(event):
-    try:
-        msg = event.message
-        logging.info(f"[EVENT] id={msg.id} text={msg.text!r}")
+def create_event_handler(channel: str):
+    @events.register(events.NewMessage(chats=channel))
+    async def handler(event):
+        try:
+            msg = event.message
+            logging.info(f"[EVENT] channel={channel} id={msg.id} text={msg.text!r}")
 
-        if msg.id in processed_posts:
+            post_key = f"{channel}_{msg.id}"
+            if post_key in processed_posts:
+                return
+            processed_posts.add(post_key)
+
+            await asyncio.sleep(random.randint(20, 60))
+            logging.info(f"Новый пост в {channel}: {msg.id}")
+
+            if not msg.text or len(msg.text) < MIN_POST_LENGTH:
+                logging.info("Пропуск: слишком короткий пост")
+                return
+
+            if not msg.replies or not msg.replies.comments:
+                logging.info("Пропуск: у поста нет комментариев")
+                return
+
+        except Exception as e:
+            logging.exception(f"Ошибка в обработчике: {e}")
             return
-        processed_posts.add(msg.id)
 
-        await asyncio.sleep(random.randint(20, 60))
-        logging.info(f"Новый пост {msg.id}")
+        await asyncio.sleep(random.randint(*POST_DELAY))
 
-        if not msg.text or len(msg.text) < MIN_POST_LENGTH:
-            logging.info("Пропуск: слишком короткий пост")
-            return
-
-        if not msg.replies or not msg.replies.comments:
-            logging.info("Пропуск: у поста нет комментариев")
-            return
-
-    except Exception as e:
-        logging.exception(f"Ошибка в обработчике: {e}")
-        return
-
-    await asyncio.sleep(random.randint(*POST_DELAY))
-
-    discussion_entities = await get_discussion_entities_for_all(clients, CHANNEL, msg.id)
-    if not discussion_entities:
-        logging.error("Не удалось получить discussion entity ни для одного клиента")
-        return
-
-    used_words_under_post: Set[str] = set()
-    sent_messages: List[Tuple[TelegramClient, object]] = []
-
-    # Основные комментарии
-    root_clients = choose_root_comment_clients()
-    for client in root_clients:
-        entity_data = discussion_entities.get(client)
-        if not entity_data:
-            continue
-
-        entity, reply_id = entity_data
-        comment = await generate_comment(msg.text, used_words_under_post)
-
-        sent = await send_comment_or_gif(
-            client, entity, reply_id, comment, GIF_PROBABILITY
+        # Берем только watcher_clients для получения discussion
+        discussion_entities = await get_discussion_entities_for_all(
+            watcher_clients, channel, msg.id
         )
+        if not discussion_entities:
+            logging.error("Не удалось получить discussion entity ни для одного watcher клиента")
+            return
 
-        if sent:
-            sent_messages.append((client, sent))
-            logging.info(f"Комментарий отправлен ({client.session.filename})")
+        used_words_under_post: Set[str] = set()
+        sent_messages: List[Tuple[TelegramClient, object]] = []
 
-        await asyncio.sleep(random.randint(*BETWEEN_COMMENTS_DELAY))
+        # Основные комментарии (только от commenter_clients)
+        root_clients = choose_root_comment_clients()
+        for client in root_clients:
+            entity_data = discussion_entities.get(client)
+            if not entity_data:
+                continue
 
-    # Диалог
-    await run_dialogue_chain(
-        msg.text, discussion_entities, sent_messages, used_words_under_post
-    )
+            entity, reply_id = entity_data
+            comment = await generate_comment(msg.text, used_words_under_post)
+
+            sent = await send_comment_or_gif(
+                client, entity, reply_id, comment, GIF_PROBABILITY
+            )
+
+            if sent:
+                sent_messages.append((client, sent))
+                logging.info(f"Комментарий отправлен ({client.session.filename})")
+
+            await asyncio.sleep(random.randint(*BETWEEN_COMMENTS_DELAY))
+
+        # Диалог
+        await run_dialogue_chain(
+            msg.text, discussion_entities, sent_messages, used_words_under_post
+        )
+    
+    return handler
 
 
 async def main():
-    global clients
+    global clients, watcher_clients, commenter_clients
 
-    clients = await init_clients(ACCOUNTS, CHANNEL)
+    clients = await init_clients(ACCOUNTS, CHANNELS)
     if not clients:
         logging.error("Нет ни одного успешно запущенного клиента")
         return
 
-    clients[0].add_event_handler(new_post_handler)
+    for acc, client in zip(ACCOUNTS, clients):
+        role = acc.get("role", "commenter")
+        if role == "watcher":
+            watcher_clients.append(client)
+        else:
+            commenter_clients.append(client)
+
+    if not watcher_clients:
+        logging.error("Нет watcher аккаунтов для отслеживания постов")
+        return
+
+    if not commenter_clients:
+        logging.error("Нет commenter аккаунтов для комментирования")
+        return
+
+    logging.info(f"Watcher аккаунты: {[c.session.filename for c in watcher_clients]}")
+    logging.info(f"Commenter аккаунты: {[c.session.filename for c in commenter_clients]}")
+
+    for channel in CHANNELS:
+        if channel.strip():
+            handler = create_event_handler(channel.strip())
+            # Регистрируем обработчик на первом watcher аккаунте
+            watcher_clients[0].add_event_handler(handler)
+            logging.info(f"Добавлен обработчик для канала: {channel}")
 
     tasks = [asyncio.create_task(run_client_safe(c)) for c in clients]
 

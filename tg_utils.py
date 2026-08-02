@@ -8,7 +8,7 @@ from telethon.tl.functions.channels import JoinChannelRequest
 from telethon.errors import UserAlreadyParticipantError, FloodWaitError
 from telethon.tl.functions.messages import GetDiscussionMessageRequest
 
-from config import GIF_FOLDER
+from config import GIF_FOLDER, LOG_CHANNEL
 
 # =====================================================
 # ================= GIF ==============================
@@ -44,12 +44,26 @@ async def ensure_joined(client: TelegramClient, channel: str):
         logging.error(f"Ошибка подписки: {e}")
 
 
-async def send_log(text: str):
+async def send_log_to_tg(text: str, client: Optional[TelegramClient] = None):
+    """Отправляет лог в Telegram"""
     logging.info(f"[LOG] {text}")
+    
+    if not LOG_CHANNEL or not client:
+        return
+    
+    try:
+        entity = await client.get_entity(LOG_CHANNEL)
+        await client.send_message(entity, f"📝 {text}")
+    except ValueError:
+        if LOG_CHANNEL.lower() == "me":
+            await client.send_message("me", f"📝 {text}")
+        else:
+            logging.error(f"Не удалось найти чат/пользователя: {LOG_CHANNEL}")
+    except Exception as e:
+        logging.error(f"Не удалось отправить лог в Telegram: {e}")
 
 
-async def init_clients(accounts: List[Dict], channel: str) -> List[TelegramClient]:
-    """Инициализирует всех клиентов"""
+async def init_clients(accounts: List[Dict], channels: List[str]) -> List[TelegramClient]:
     os.makedirs("sessions", exist_ok=True)
     clients = []
 
@@ -64,9 +78,12 @@ async def init_clients(accounts: List[Dict], channel: str) -> List[TelegramClien
                 proxy=acc.get("proxy")
             )
             await client.start()
-            await ensure_joined(client, channel)
+            
+            for channel in channels:
+                await ensure_joined(client, channel)
+            
             clients.append(client)
-            logging.info(f"{acc['session']} запущен")
+            logging.info(f"{acc['session']} запущен (роль: {acc.get('role', 'commenter')})")
             
         except Exception as e:
             logging.error(f"{acc['session']} не запустился: {e}")
@@ -138,7 +155,7 @@ async def send_comment_or_gif(
                     file=gif_path,
                     reply_to=reply_to_id
                 )
-                await send_log(f"🎞 {client.session.filename} отправил гиф")
+                await send_log_to_tg(f"🎞 {client.session.filename} отправил гиф", client)
                 return sent
 
         sent = await client.send_message(
@@ -146,7 +163,7 @@ async def send_comment_or_gif(
             message=comment,
             reply_to=reply_to_id
         )
-        await send_log(f"💬 {client.session.filename} отправил:\n{comment}")
+        await send_log_to_tg(f"💬 {client.session.filename}:\n{comment}", client)
         return sent
 
     except FloodWaitError as e:
@@ -175,7 +192,7 @@ async def send_reply_message(
             message=text,
             reply_to=reply_to_id
         )
-        await send_log(f"↪️ {client.session.filename} ответил:\n{text}")
+        await send_log_to_tg(f"↪️ {client.session.filename} ответил:\n{text}", client)
         return sent
     except FloodWaitError as e:
         logging.error(f"FloodWait в диалоге у {client.session.filename}: {e}")

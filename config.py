@@ -12,7 +12,7 @@ load_dotenv()
 
 API_ID = int(os.getenv("API_ID", 0))
 API_HASH = os.getenv("API_HASH", "")
-CHANNEL = os.getenv("CHANNEL", "")
+CHANNELS = os.getenv("CHANNELS", "").split(",")
 LOG_CHANNEL = os.getenv("LOG_CHANNEL", "")
 
 # =====================================================
@@ -30,6 +30,7 @@ MIN_POST_LENGTH = int(os.getenv("MIN_POST_LENGTH", 40))
 COMMENT_PROBABILITY = float(os.getenv("COMMENT_PROBABILITY", 0.8))
 DIALOG_PROBABILITY = float(os.getenv("DIALOG_PROBABILITY", 0.2))
 GIF_PROBABILITY = float(os.getenv("GIF_PROBABILITY", 0.2))
+ROOT_COMMENTS_RANGE = (int(os.getenv("ROOT_COMMENTS_MIN", 1)), int(os.getenv("ROOT_COMMENTS_MAX", 3)))
 
 POST_DELAY = (
     int(os.getenv("POST_DELAY_MIN", 10)),
@@ -57,7 +58,6 @@ def parse_proxy(proxy_data: Optional[Dict[str, Any]]) -> Optional[tuple]:
     
     proxy_type = proxy_data.get("type", "socks5")
     
-    # Преобразуем строку типа в константу socks
     if proxy_type == "socks5":
         proxy_type = socks.SOCKS5
     elif proxy_type == "socks4":
@@ -76,7 +76,6 @@ def parse_proxy(proxy_data: Optional[Dict[str, Any]]) -> Optional[tuple]:
 
 
 def load_accounts() -> List[Dict[str, Any]]:
-    """Загружает аккаунты из переменной окружения"""
     accounts_json = os.getenv("ACCOUNTS_JSON", "[]")
     
     try:
@@ -87,6 +86,9 @@ def load_accounts() -> List[Dict[str, Any]]:
                 acc["proxy"] = parse_proxy(acc["proxy"])
             else:
                 acc["proxy"] = None
+            
+            # Добавляем роль аккаунта (watcher - следит за постами)
+            acc["role"] = acc.get("role", "commenter")  # watcher или commenter
         
         return accounts
     except json.JSONDecodeError:
@@ -112,8 +114,8 @@ def validate_config():
         errors.append("API_ID не задан")
     if not API_HASH:
         errors.append("API_HASH не задан")
-    if not CHANNEL:
-        errors.append("CHANNEL не задан")
+    if not CHANNELS or not CHANNELS[0]:
+        errors.append("CHANNELS не задан")
     if not OPENAI_API_KEY:
         errors.append("OPENAI_API_KEY не задан")
     if not ACCOUNTS:
