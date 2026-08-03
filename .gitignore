@@ -7,11 +7,13 @@ env/
 venv/
 ENV/
 .venv/
+fd/
 
 .env
 .env.local
 .env.*.local
 test_proxy.py
+inacc.py
 
 sessions/
 *.session
