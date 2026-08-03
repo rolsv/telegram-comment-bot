@@ -74,25 +74,40 @@ def parse_proxy(proxy_data: Optional[Dict[str, Any]]) -> Optional[tuple]:
         return (proxy_type, host, port, username, password)
     return (proxy_type, host, port)
 
-
 def load_accounts() -> List[Dict[str, Any]]:
-    accounts_json = os.getenv("ACCOUNTS_JSON", "[]")
+    # Сначала пробуем загрузить из переменной окружения
+    accounts_json = os.getenv("ACCOUNTS_JSON", "")
     
-    try:
-        accounts = json.loads(accounts_json)
-        
-        for acc in accounts:
-            if "proxy" in acc and acc["proxy"]:
-                acc["proxy"] = parse_proxy(acc["proxy"])
-            else:
-                acc["proxy"] = None
-            
-            # Добавляем роль аккаунта (watcher - следит за постами)
-            acc["role"] = acc.get("role", "commenter")  # watcher или commenter
-        
-        return accounts
-    except json.JSONDecodeError:
-        return []
+    if accounts_json:
+        try:
+            accounts = json.loads(accounts_json)
+            for acc in accounts:
+                if "proxy" in acc and acc["proxy"]:
+                    acc["proxy"] = parse_proxy(acc["proxy"])
+                else:
+                    acc["proxy"] = None
+                acc["role"] = acc.get("role", "commenter")
+            return accounts
+        except json.JSONDecodeError:
+            pass
+    
+    # Если не получилось или переменная пуста, пробуем загрузить из файла
+    accounts_file = os.getenv("ACCOUNTS_JSON_FILE", "")
+    if accounts_file and os.path.exists(accounts_file):
+        try:
+            with open(accounts_file, "r", encoding="utf-8") as f:
+                accounts = json.load(f)
+                for acc in accounts:
+                    if "proxy" in acc and acc["proxy"]:
+                        acc["proxy"] = parse_proxy(acc["proxy"])
+                    else:
+                        acc["proxy"] = None
+                    acc["role"] = acc.get("role", "commenter")
+                return accounts
+        except Exception as e:
+            logging.error(f"Ошибка загрузки {accounts_file}: {e}")
+    
+    return []
 
 
 ACCOUNTS = load_accounts()

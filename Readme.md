@@ -32,5 +32,5 @@ LOG_CHANNEL=-1001234567890        # ID канала/группы
 
 1. Клонируйте репозиторий:
 ```bash
-git clone https://github.com/yourusername/telegram-comment-bot.git
+git clone https://github.com/rolsv/telegram-comment-bot.git
 cd telegram-comment-bot

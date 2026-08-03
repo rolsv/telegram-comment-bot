@@ -1,0 +1,41 @@
+[
+  {
+    "session": "acc1",
+    "api_id": 26425768,
+    "api_hash": "ddac50f58226215ad89a8f8eb0fdc3b7",
+    "role": "watcher",
+    "proxy": {
+      "type": "socks5",
+      "host": "168.81.66.250",
+      "port": 8000,
+      "username": "jp6EKz",
+      "password": "LMqJT0"
+    }
+  },
+  {
+    "session": "acc2",
+    "api_id": 22926668,
+    "api_hash": "a15ac1d9619781fcb729995d004690c2",
+    "role": "commenter",
+    "proxy": {
+      "type": "socks5",
+      "host": "45.130.129.229",
+      "port": 8000,
+      "username": "2kXrfd",
+      "password": "jgWYDa"
+    }
+  },
+  {
+    "session": "acc3",
+    "api_id": 26084296,
+    "api_hash": "8692c113a16a0c740737b5da5b8331c7",
+    "role": "commenter",
+    "proxy": {
+      "type": "socks5",
+      "host": "168.81.66.250",
+      "port": 8000,
+      "username": "jp6EKz",
+      "password": "LMqJT0"
+    }
+  }
+]
