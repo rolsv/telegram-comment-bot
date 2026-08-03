@@ -70,7 +70,9 @@ def parse_proxy(proxy_data: Optional[Dict[str, Any]]) -> Optional[tuple]:
     username = proxy_data.get("username")
     password = proxy_data.get("password")
     
+    # Telethon ожидает именно такой формат для прокси с авторизацией
     if username and password:
+        # Важно: порядок аргументов для Telethon
         return (proxy_type, host, port, username, password)
     return (proxy_type, host, port)
 

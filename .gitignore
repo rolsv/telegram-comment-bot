@@ -11,6 +11,7 @@ ENV/
 .env
 .env.local
 .env.*.local
+test_proxy.py
 
 sessions/
 *.session

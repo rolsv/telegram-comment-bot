@@ -1,0 +1,4 @@
+scp "D:\bots-nakr\testsite\*" root@45.198.0.165:/root/comment/
+scp "D:\bots-nakr\comment\.env" root@45.198.0.165:/root/comment/
+
+Q!jKj9%ze277
