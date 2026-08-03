@@ -17,7 +17,7 @@ from ai_utils import generate_comment
 from tg_utils import (
     init_clients, run_client_safe, shutdown_clients,
     get_discussion_entities_for_all, send_comment_or_gif,
-    send_reply_message, send_log_to_tg
+    send_reply_message, send_log_to_tg, ensure_joined
 )
 
 logging.basicConfig(
@@ -100,7 +100,7 @@ def create_event_handler(channel: str):
     async def handler(event):
         try:
             msg = event.message
-            logging.info(f"[EVENT] channel={channel} id={msg.id} text={msg.text!r}")
+            logging.info(f"[EVENT] channel={channel} id={msg.id}")
 
             post_key = f"{channel}_{msg.id}"
             if post_key in processed_posts:
@@ -114,36 +114,44 @@ def create_event_handler(channel: str):
                 logging.info("Пропуск: слишком короткий пост")
                 return
 
-            if not msg.replies or not msg.replies.comments:
-                logging.info("Пропуск: у поста нет комментариев")
-                return
-
         except Exception as e:
             logging.exception(f"Ошибка в обработчике: {e}")
             return
 
         await asyncio.sleep(random.randint(*POST_DELAY))
 
-        # Берем только watcher_clients для получения discussion
+        # Получаем discussion entities
+        logging.info("Получение discussion entity...")
         discussion_entities = await get_discussion_entities_for_all(
-            watcher_clients, channel, msg.id
+            commenter_clients, channel, msg.id  # Используем commenter_clients
         )
+        
+        logging.info(f"Получено discussion_entities: {len(discussion_entities)}")
+        for client, data in discussion_entities.items():
+            logging.info(f"  - {client.session.filename}: entity={data[0]}, reply_id={data[1]}")
+
         if not discussion_entities:
-            logging.error("Не удалось получить discussion entity ни для одного watcher клиента")
+            logging.error("❌ Не удалось получить discussion entity")
             return
 
         used_words_under_post: Set[str] = set()
         sent_messages: List[Tuple[TelegramClient, object]] = []
 
-        # Основные комментарии (только от commenter_clients)
+        # Основные комментарии
         root_clients = choose_root_comment_clients()
+        logging.info(f"Будет отправлено {len(root_clients)} комментариев")
+        
         for client in root_clients:
             entity_data = discussion_entities.get(client)
             if not entity_data:
+                logging.warning(f"Нет entity для {client.session.filename}")
                 continue
 
             entity, reply_id = entity_data
+            logging.info(f"Отправка от {client.session.filename}")
+            
             comment = await generate_comment(msg.text, used_words_under_post)
+            logging.info(f"Комментарий: {comment}")
 
             sent = await send_comment_or_gif(
                 client, entity, reply_id, comment, GIF_PROBABILITY
@@ -151,14 +159,19 @@ def create_event_handler(channel: str):
 
             if sent:
                 sent_messages.append((client, sent))
-                logging.info(f"Комментарий отправлен ({client.session.filename})")
+                logging.info(f"✅ Комментарий отправлен ({client.session.filename})")
+            else:
+                logging.error(f"❌ Не удалось отправить комментарий ({client.session.filename})")
 
             await asyncio.sleep(random.randint(*BETWEEN_COMMENTS_DELAY))
 
         # Диалог
-        await run_dialogue_chain(
-            msg.text, discussion_entities, sent_messages, used_words_under_post
-        )
+        if sent_messages:
+            await run_dialogue_chain(
+                msg.text, discussion_entities, sent_messages, used_words_under_post
+            )
+        else:
+            logging.info("Нет отправленных комментариев для диалога")
     
     return handler
 
@@ -192,7 +205,6 @@ async def main():
     for channel in CHANNELS:
         if channel.strip():
             handler = create_event_handler(channel.strip())
-            # Регистрируем обработчик на первом watcher аккаунте
             watcher_clients[0].add_event_handler(handler)
             logging.info(f"Добавлен обработчик для канала: {channel}")
 

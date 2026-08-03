@@ -2,3 +2,45 @@ scp "D:\bots-nakr\testsite\*" root@45.198.0.165:/root/comment/
 scp "D:\bots-nakr\comment\.env" root@45.198.0.165:/root/comment/
 
 Q!jKj9%ze277
+
+Комментировать в канал, то есть приватные чат у канала если
+
+async def get_discussion_entities_for_all(
+    clients: List[TelegramClient],
+    channel: str,
+    msg_id: int
+) -> Dict[TelegramClient, Tuple[object, int]]:
+    discussion_entities = {}
+
+    for client in clients:
+        try:
+            # Пробуем получить discussion
+            res = await client(GetDiscussionMessageRequest(
+                peer=channel,
+                msg_id=msg_id
+            ))
+
+            if res.messages and res.chats:
+                discussion_msg_client = res.messages[0]
+                discussion_chat_client = res.chats[0]
+                entity = await client.get_entity(discussion_chat_client)
+                discussion_entities[client] = (entity, discussion_msg_client.id)
+                logging.info(f"✅ {client.session.filename}: discussion найден")
+            else:
+                # Если нет discussion, используем сам канал
+                logging.info(f"⚠️ {client.session.filename}: нет discussion, используем канал")
+                channel_entity = await client.get_entity(channel)
+                discussion_entities[client] = (channel_entity, msg_id)
+                logging.info(f"✅ {client.session.filename}: используем канал как fallback")
+
+        except Exception as e:
+            logging.error(f"❌ {client.session.filename} не может получить discussion: {e}")
+            # Fallback: используем канал
+            try:
+                channel_entity = await client.get_entity(channel)
+                discussion_entities[client] = (channel_entity, msg_id)
+                logging.info(f"✅ {client.session.filename}: fallback на канал")
+            except Exception as e2:
+                logging.error(f"❌ {client.session.filename}: fallback тоже не работает: {e2}")
+
+    return discussion_entities
